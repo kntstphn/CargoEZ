@@ -92,10 +92,38 @@ function Dashboard() {
     addWall(-2.5, 0, Math.PI / 2); // Left wall
 
     // 📦 Add Box Function
+    // const addBox = () => {
+    //   if (!sceneRef.current || !worldRef.current) return;
+
+    //   // Create a visual box
+    //   const boxGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+    //   const boxMaterial = new THREE.MeshBasicMaterial({
+    //     color: Math.random() * 0xffffff,
+    //   });
+    //   const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+
+    //   // Spawn at a random position
+    //   boxMesh.position.set(Math.random() * 3 - 1.5, 3, Math.random() * 3 - 1.5);
+    //   sceneRef.current.add(boxMesh);
+
+    //   // Create physics box
+    //   const boxShape = new CANNON.Box(new CANNON.Vec3(0.25, 0.25, 0.25));
+    //   const boxBody = new CANNON.Body({ mass: 1, shape: boxShape });
+    //   boxBody.position.set(
+    //     boxMesh.position.x,
+    //     boxMesh.position.y,
+    //     boxMesh.position.z
+    //   );
+
+    //   worldRef.current.addBody(boxBody);
+
+    //   // Store the mesh-body mapping
+    //   objectToBodyMap.current.set(boxMesh, boxBody);
+    // };
     const addBox = () => {
       if (!sceneRef.current || !worldRef.current) return;
 
-      // Create a visual box
+      // 🎨 Three.js Visual Box
       const boxGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
       const boxMaterial = new THREE.MeshBasicMaterial({
         color: Math.random() * 0xffffff,
@@ -106,9 +134,22 @@ function Dashboard() {
       boxMesh.position.set(Math.random() * 3 - 1.5, 3, Math.random() * 3 - 1.5);
       sceneRef.current.add(boxMesh);
 
-      // Create physics box
+      // ⚡ Cannon.js Physics Box
+      const physicsMaterial = new CANNON.Material("boxMaterial");
+      physicsMaterial.restitution = 0; // No bouncing
+
       const boxShape = new CANNON.Box(new CANNON.Vec3(0.25, 0.25, 0.25));
-      const boxBody = new CANNON.Body({ mass: 1, shape: boxShape });
+      const boxBody = new CANNON.Body({
+        mass: 5, // ⬆️ Make the box heavier
+        shape: boxShape,
+        material: physicsMaterial,
+      });
+
+      // Apply damping to slow down unnecessary movement
+      boxBody.linearDamping = 0.3;
+      boxBody.angularDamping = 0.5;
+
+      // Set the initial position of the physics body
       boxBody.position.set(
         boxMesh.position.x,
         boxMesh.position.y,
@@ -181,55 +222,55 @@ function Dashboard() {
     window.addEventListener("mouseup", onMouseUp);
 
     // 🎮 Touch Controls for Dragging
-    const onTouchStart = (event: TouchEvent) => {
-      if (!worldRef.current) return;
-      controls.enabled = false; // Disable controls when touch starts
+    // const onTouchStart = (event: TouchEvent) => {
+    //   if (!worldRef.current) return;
+    //   controls.enabled = false; // Disable controls when touch starts
 
-      const touch = event.touches[0];
-      mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
+    //   const touch = event.touches[0];
+    //   mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+    //   mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+    //   raycaster.setFromCamera(mouse, camera);
 
-      const intersects = raycaster.intersectObjects(scene.children);
+    //   const intersects = raycaster.intersectObjects(scene.children);
 
-      if (intersects.length > 0) {
-        const selectedMesh = intersects[0].object as THREE.Mesh;
-        if (objectToBodyMap.current.has(selectedMesh)) {
-          selectedBodyRef.current = objectToBodyMap.current.get(selectedMesh)!;
-          isDraggingRef.current = true;
-        }
-      }
-    };
+    //   if (intersects.length > 0) {
+    //     const selectedMesh = intersects[0].object as THREE.Mesh;
+    //     if (objectToBodyMap.current.has(selectedMesh)) {
+    //       selectedBodyRef.current = objectToBodyMap.current.get(selectedMesh)!;
+    //       isDraggingRef.current = true;
+    //     }
+    //   }
+    // };
 
-    const onTouchMove = (event: TouchEvent) => {
-      if (!isDraggingRef.current || !selectedBodyRef.current) return;
+    // const onTouchMove = (event: TouchEvent) => {
+    //   if (!isDraggingRef.current || !selectedBodyRef.current) return;
 
-      controls.enabled = false;
+    //   controls.enabled = false;
 
-      const touch = event.touches[0];
-      mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
+    //   const touch = event.touches[0];
+    //   mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+    //   mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+    //   raycaster.setFromCamera(mouse, camera);
 
-      const newPosition = raycaster.ray.origin.add(
-        raycaster.ray.direction.multiplyScalar(5)
-      );
+    //   const newPosition = raycaster.ray.origin.add(
+    //     raycaster.ray.direction.multiplyScalar(5)
+    //   );
 
-      selectedBodyRef.current.position.set(
-        newPosition.x,
-        newPosition.y,
-        newPosition.z
-      );
-    };
+    //   selectedBodyRef.current.position.set(
+    //     newPosition.x,
+    //     newPosition.y,
+    //     newPosition.z
+    //   );
+    // };
 
-    const onTouchEnd = () => {
-      isDraggingRef.current = false;
-      selectedBodyRef.current = null;
-    };
+    // const onTouchEnd = () => {
+    //   isDraggingRef.current = false;
+    //   selectedBodyRef.current = null;
+    // };
 
-    window.addEventListener("touchstart", onTouchStart);
-    window.addEventListener("touchmove", onTouchMove);
-    window.addEventListener("touchend", onTouchEnd);
+    // window.addEventListener("touchstart", onTouchStart);
+    // window.addEventListener("touchmove", onTouchMove);
+    // window.addEventListener("touchend", onTouchEnd);
 
     // 🔄 Animation Loop
     const animate = () => {
@@ -243,7 +284,6 @@ function Dashboard() {
 
       controls.update();
       renderer.render(scene, camera);
-      controls.enabled = true;
     };
     animate();
 
@@ -254,9 +294,9 @@ function Dashboard() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
 
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
+      // window.removeEventListener("touchstart", onTouchStart);
+      // window.removeEventListener("touchmove", onTouchMove);
+      // window.removeEventListener("touchend", onTouchEnd);
     };
   }, []);
 
