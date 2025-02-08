@@ -201,6 +201,9 @@ function Dashboard() {
 
     const onTouchMove = (event: TouchEvent) => {
       if (!isDraggingRef.current || !selectedBodyRef.current) return;
+
+      controls.enabled = false;
+
       const touch = event.touches[0];
       mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
@@ -238,6 +241,7 @@ function Dashboard() {
 
       controls.update();
       renderer.render(scene, camera);
+      controls.enabled = true;
     };
     animate();
 
