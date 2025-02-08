@@ -6,28 +6,31 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 function Dashboard() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const selectedObjectRef = useRef<THREE.Mesh | null>(null);
-  const isDraggingRef = useRef(false);
-  const controlsRef = useRef<OrbitControls | null>(null);
   const objectToBodyMap = useRef(new Map<THREE.Mesh, CANNON.Body>());
-  const mouseRef = useRef(new THREE.Vector2());
   const worldRef = useRef<CANNON.World | null>(null);
-  let scene: THREE.Scene,
-    camera: THREE.PerspectiveCamera,
-    renderer: THREE.WebGLRenderer;
-  let platform: THREE.Mesh;
-  let groundBody: CANNON.Body;
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const addBoxRef = useRef<(() => void) | null>(null);
+
+  // Dragging references
+  const selectedBodyRef = useRef<CANNON.Body | null>(null);
+  const isDraggingRef = useRef(false);
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+  let camera: THREE.PerspectiveCamera,
+    renderer: THREE.WebGLRenderer,
+    controls: OrbitControls;
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // 🌍 Initialize Cannon.js physics world
+    // 🌍 Physics World
     const world = new CANNON.World();
     world.gravity.set(0, -9.8, 0);
     worldRef.current = world;
 
-    // Three.js Scene
-    scene = new THREE.Scene();
+    // 🎬 Three.js Scene
+    const scene = new THREE.Scene();
+    sceneRef.current = scene;
     camera = new THREE.PerspectiveCamera(
       75,
       window.innerWidth / window.innerHeight,
@@ -40,86 +43,137 @@ function Dashboard() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     containerRef.current.appendChild(renderer.domElement);
 
-    // 🛠️ Add ground (Platform)
-    platform = new THREE.Mesh(
+    // 🏆 Controls
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+
+    // 🛠️ Ground
+    const platform = new THREE.Mesh(
       new THREE.BoxGeometry(5, 0.2, 5),
       new THREE.MeshBasicMaterial({ color: 0x808080 })
     );
     platform.position.set(0, -1, 0);
     scene.add(platform);
 
-    // 📦 Create physics ground using a Box instead of a Plane
+    // 📦 Physics Ground
     const groundShape = new CANNON.Box(new CANNON.Vec3(2.5, 0.1, 2.5));
-    groundBody = new CANNON.Body({ mass: 0, shape: groundShape });
+    const groundBody = new CANNON.Body({ mass: 0, shape: groundShape });
     groundBody.position.set(0, -1, 0);
     world.addBody(groundBody);
 
-    // 🏆 Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.enableRotate = true;
-    controls.enableZoom = true;
-    controlsRef.current = controls;
+    // 🏗️ Walls (Visual + Physics)
+    const addWall = (x: number, z: number, rotationY: number) => {
+      const wallMaterial = new THREE.MeshBasicMaterial({ color: 0x303030 });
 
-    // 🖱️ Mouse Events for Dragging
-    let dragTimeout: NodeJS.Timeout;
+      // Three.js wall
+      const wall = new THREE.Mesh(
+        new THREE.BoxGeometry(5, 2, 0.2),
+        wallMaterial
+      );
+      wall.position.set(x, 0, z);
+      wall.rotation.y = rotationY;
+      scene.add(wall);
 
-    const onMouseDown = (event: MouseEvent) => {
-      mouseRef.current.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouseRef.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      // Cannon.js physics wall
+      const wallShape =
+        rotationY === 0
+          ? new CANNON.Box(new CANNON.Vec3(2.5, 1, 0.1)) // Front/Back
+          : new CANNON.Box(new CANNON.Vec3(0.1, 1, 2.5)); // Sides
 
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(mouseRef.current, camera);
-      const intersects = raycaster.intersectObjects(
-        Array.from(objectToBodyMap.current.keys())
+      const wallBody = new CANNON.Body({ mass: 0, shape: wallShape });
+      wallBody.position.set(x, 0, z);
+      world.addBody(wallBody);
+    };
+
+    addWall(0, -2.5, 0); // Back wall
+    addWall(-2.5, 0, Math.PI / 2); // Left wall
+
+    // 📦 Add Box Function
+    const addBox = () => {
+      if (!sceneRef.current || !worldRef.current) return;
+
+      // Create a visual box
+      const boxGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+      const boxMaterial = new THREE.MeshBasicMaterial({
+        color: Math.random() * 0xffffff,
+      });
+      const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+
+      // Spawn at a random position
+      boxMesh.position.set(Math.random() * 3 - 1.5, 3, Math.random() * 3 - 1.5);
+      sceneRef.current.add(boxMesh);
+
+      // Create physics box
+      const boxShape = new CANNON.Box(new CANNON.Vec3(0.25, 0.25, 0.25));
+      const boxBody = new CANNON.Body({ mass: 1, shape: boxShape });
+      boxBody.position.set(
+        boxMesh.position.x,
+        boxMesh.position.y,
+        boxMesh.position.z
       );
 
-      if (intersects.length > 0) {
-        dragTimeout = setTimeout(() => {
-          selectedObjectRef.current = intersects[0].object as THREE.Mesh;
-          isDraggingRef.current = true;
-          controlsRef.current!.enabled = false;
+      worldRef.current.addBody(boxBody);
 
-          const body = objectToBodyMap.current.get(selectedObjectRef.current);
-          if (body) {
-            body.type = CANNON.Body.KINEMATIC;
-          }
-        }, 300);
+      // Store the mesh-body mapping
+      objectToBodyMap.current.set(boxMesh, boxBody);
+    };
+
+    // Store function for button click
+    addBoxRef.current = addBox;
+
+    // Add some boxes initially
+    for (let i = 0; i < 3; i++) addBox();
+
+    // 🖱️ Mouse Dragging Logic
+    const onMouseDown = (event: MouseEvent) => {
+      if (!worldRef.current) return;
+
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(scene.children);
+
+      if (intersects.length > 0) {
+        const selectedMesh = intersects[0].object as THREE.Mesh;
+        if (objectToBodyMap.current.has(selectedMesh)) {
+          selectedBodyRef.current = objectToBodyMap.current.get(selectedMesh)!;
+          isDraggingRef.current = true;
+
+          // Disable OrbitControls while dragging
+          controls.enabled = false;
+        }
       }
     };
 
     const onMouseMove = (event: MouseEvent) => {
-      if (!isDraggingRef.current || !selectedObjectRef.current) return;
+      if (!isDraggingRef.current || !selectedBodyRef.current) return;
 
-      mouseRef.current.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouseRef.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
 
-      const raycaster = new THREE.Raycaster();
-      raycaster.setFromCamera(mouseRef.current, camera);
-      const intersects = raycaster.intersectObject(platform);
+      const newPosition = raycaster.ray.origin.add(
+        raycaster.ray.direction.multiplyScalar(5)
+      );
 
-      if (intersects.length > 0) {
-        const body = objectToBodyMap.current.get(selectedObjectRef.current);
-        if (body) {
-          const point = intersects[0].point;
-          body.position.set(point.x, point.y, point.z);
-        }
-      }
+      // 🚧 Prevent box from going outside the walls
+      const clampedX = Math.max(-2.25, Math.min(2.25, newPosition.x));
+      const clampedZ = Math.max(-2.25, Math.min(2.25, newPosition.z));
+      const clampedY = Math.max(-0.75, Math.min(3, newPosition.y));
+
+      selectedBodyRef.current.position.set(clampedX, clampedY, clampedZ);
     };
 
     const onMouseUp = () => {
-      clearTimeout(dragTimeout);
-      if (isDraggingRef.current && selectedObjectRef.current) {
-        const body = objectToBodyMap.current.get(selectedObjectRef.current);
-        if (body) {
-          body.type = CANNON.Body.DYNAMIC;
-        }
-      }
-
       isDraggingRef.current = false;
-      selectedObjectRef.current = null;
-      controlsRef.current!.enabled = true;
+      selectedBodyRef.current = null;
+
+      // Re-enable OrbitControls when done dragging
+      controls.enabled = true;
     };
 
     window.addEventListener("mousedown", onMouseDown);
@@ -132,10 +186,8 @@ function Dashboard() {
       world.step(1 / 60);
 
       objectToBodyMap.current.forEach((body, mesh) => {
-        if (!isDraggingRef.current) {
-          mesh.position.copy(body.position);
-          mesh.quaternion.copy(body.quaternion);
-        }
+        mesh.position.copy(body.position);
+        mesh.quaternion.copy(body.quaternion);
       });
 
       controls.update();
@@ -144,38 +196,19 @@ function Dashboard() {
     animate();
 
     return () => {
+      containerRef.current?.removeChild(renderer.domElement);
+      renderer.dispose();
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
-      containerRef.current?.removeChild(renderer.domElement);
-      renderer.dispose();
     };
   }, []);
-
-  const addBox = () => {
-    if (!worldRef.current) return;
-
-    const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
-    const boxMaterial = new THREE.MeshBasicMaterial({
-      color: Math.random() * 0xffffff,
-    });
-    const box = new THREE.Mesh(boxGeometry, boxMaterial);
-    box.position.set(0, 2, 0);
-    scene.add(box);
-
-    const boxShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5));
-    const boxBody = new CANNON.Body({ mass: 1, shape: boxShape });
-    boxBody.position.set(0, 2, 0);
-    worldRef.current.addBody(boxBody);
-
-    objectToBodyMap.current.set(box, boxBody);
-  };
 
   return (
     <div>
       <button
-        onClick={addBox}
-        style={{ position: "absolute", top: 10, left: 10, zIndex: 1 }}
+        onClick={() => addBoxRef.current?.()}
+        style={{ position: "absolute", top: 10, left: 10 }}
       >
         Add Box
       </button>
