@@ -180,6 +180,52 @@ function Dashboard() {
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
 
+    // 🎮 Touch Controls for Dragging
+    const onTouchStart = (event: TouchEvent) => {
+      if (!worldRef.current) return;
+      const touch = event.touches[0];
+      mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(scene.children);
+
+      if (intersects.length > 0) {
+        const selectedMesh = intersects[0].object as THREE.Mesh;
+        if (objectToBodyMap.current.has(selectedMesh)) {
+          selectedBodyRef.current = objectToBodyMap.current.get(selectedMesh)!;
+          isDraggingRef.current = true;
+        }
+      }
+    };
+
+    const onTouchMove = (event: TouchEvent) => {
+      if (!isDraggingRef.current || !selectedBodyRef.current) return;
+      const touch = event.touches[0];
+      mouse.x = (touch.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(touch.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const newPosition = raycaster.ray.origin.add(
+        raycaster.ray.direction.multiplyScalar(5)
+      );
+
+      selectedBodyRef.current.position.set(
+        newPosition.x,
+        newPosition.y,
+        newPosition.z
+      );
+    };
+
+    const onTouchEnd = () => {
+      isDraggingRef.current = false;
+      selectedBodyRef.current = null;
+    };
+
+    window.addEventListener("touchstart", onTouchStart);
+    window.addEventListener("touchmove", onTouchMove);
+    window.addEventListener("touchend", onTouchEnd);
+
     // 🔄 Animation Loop
     const animate = () => {
       requestAnimationFrame(animate);
@@ -201,6 +247,10 @@ function Dashboard() {
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
+
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
     };
   }, []);
 
