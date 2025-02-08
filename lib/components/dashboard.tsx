@@ -10,6 +10,7 @@ function Dashboard() {
   const worldRef = useRef<CANNON.World | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const addBoxRef = useRef<(() => void) | null>(null);
+  const dragConstraintRef = useRef<CANNON.PointToPointConstraint | null>(null);
 
   // Dragging references
   const selectedBodyRef = useRef<CANNON.Body | null>(null);
@@ -120,6 +121,47 @@ function Dashboard() {
     //   // Store the mesh-body mapping
     //   objectToBodyMap.current.set(boxMesh, boxBody);
     // };
+    // const addBox = () => {
+    //   if (!sceneRef.current || !worldRef.current) return;
+
+    //   // 🎨 Three.js Visual Box
+    //   const boxGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+    //   const boxMaterial = new THREE.MeshBasicMaterial({
+    //     color: Math.random() * 0xffffff,
+    //   });
+    //   const boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+
+    //   // Spawn at a random position
+    //   boxMesh.position.set(Math.random() * 3 - 1.5, 3, Math.random() * 3 - 1.5);
+    //   sceneRef.current.add(boxMesh);
+
+    //   // ⚡ Cannon.js Physics Box
+    //   const physicsMaterial = new CANNON.Material("boxMaterial");
+    //   physicsMaterial.restitution = 0; // No bouncing
+
+    //   const boxShape = new CANNON.Box(new CANNON.Vec3(0.25, 0.25, 0.25));
+    //   const boxBody = new CANNON.Body({
+    //     mass: 5, // ⬆️ Make the box heavier
+    //     shape: boxShape,
+    //     material: physicsMaterial,
+    //   });
+
+    //   // Apply damping to slow down unnecessary movement
+    //   boxBody.linearDamping = 0.3;
+    //   boxBody.angularDamping = 0.5;
+
+    //   // Set the initial position of the physics body
+    //   boxBody.position.set(
+    //     boxMesh.position.x,
+    //     boxMesh.position.y,
+    //     boxMesh.position.z
+    //   );
+
+    //   worldRef.current.addBody(boxBody);
+
+    //   // Store the mesh-body mapping
+    //   objectToBodyMap.current.set(boxMesh, boxBody);
+    // };
     const addBox = () => {
       if (!sceneRef.current || !worldRef.current) return;
 
@@ -140,14 +182,20 @@ function Dashboard() {
 
       const boxShape = new CANNON.Box(new CANNON.Vec3(0.25, 0.25, 0.25));
       const boxBody = new CANNON.Body({
-        mass: 5, // ⬆️ Make the box heavier
+        mass: 10, // ⬆️ Make the box heavier
         shape: boxShape,
         material: physicsMaterial,
       });
 
-      // Apply damping to slow down unnecessary movement
-      boxBody.linearDamping = 0.3;
-      boxBody.angularDamping = 0.5;
+      // 🛑 Reduce movement in unwanted directions
+      boxBody.linearDamping = 0.8; // Reduce sliding
+      boxBody.angularDamping = 1; // Stop spinning
+      boxBody.fixedRotation = true; // Prevent rotation
+      boxBody.allowSleep = true; // Allow it to settle
+
+      // 🚫 Constrain movement to X and Z only (no up/down movement)
+      boxBody.velocity.set(0, 0, 0);
+      boxBody.angularVelocity.set(0, 0, 0);
 
       // Set the initial position of the physics body
       boxBody.position.set(
@@ -169,22 +217,80 @@ function Dashboard() {
     for (let i = 0; i < 3; i++) addBox();
 
     // 🖱️ Mouse Dragging Logic
+    // const onMouseDown = (event: MouseEvent) => {
+    //   if (!worldRef.current || !sceneRef.current) return;
+
+    //   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    //   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    //   raycaster.setFromCamera(mouse, camera);
+
+    //   const intersects = raycaster.intersectObjects(sceneRef.current.children);
+
+    //   if (intersects.length > 0) {
+    //     const selectedMesh = intersects[0].object as THREE.Mesh;
+    //     const selectedBody = objectToBodyMap.current.get(selectedMesh);
+
+    //     if (selectedBody) {
+    //       selectedBodyRef.current = selectedBody;
+    //       isDraggingRef.current = true;
+
+    //       // ⏳ Temporarily disable physics effects
+    //       selectedBodyRef.current.mass = 0;
+    //       selectedBodyRef.current.collisionResponse = false;
+    //       selectedBodyRef.current.updateMassProperties();
+
+    //       // ✅ Fix: Create an anchor point before adding it to the world
+    //       const anchorBody = new CANNON.Body({ mass: 0 });
+    //       worldRef.current.addBody(anchorBody); // Add first, then use
+
+    //       // 🔗 Create constraint
+    //       dragConstraintRef.current = new CANNON.PointToPointConstraint(
+    //         selectedBodyRef.current,
+    //         new CANNON.Vec3(0, 0, 0), // Attach at center
+    //         anchorBody,
+    //         new CANNON.Vec3(0, 0, 0) // Attach at anchor center
+    //       );
+
+    //       worldRef.current.addConstraint(dragConstraintRef.current);
+    //       controls.enabled = false;
+    //     }
+    //   }
+    // };
     const onMouseDown = (event: MouseEvent) => {
-      if (!worldRef.current) return;
+      if (!worldRef.current || !sceneRef.current) return;
 
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
 
-      const intersects = raycaster.intersectObjects(scene.children);
+      const intersects = raycaster.intersectObjects(sceneRef.current.children);
 
       if (intersects.length > 0) {
         const selectedMesh = intersects[0].object as THREE.Mesh;
-        if (objectToBodyMap.current.has(selectedMesh)) {
-          selectedBodyRef.current = objectToBodyMap.current.get(selectedMesh)!;
+        const selectedBody = objectToBodyMap.current.get(selectedMesh);
+
+        if (selectedBody) {
+          selectedBodyRef.current = selectedBody;
           isDraggingRef.current = true;
 
-          // Disable OrbitControls while dragging
+          // ⏳ Temporarily disable physics effects
+          selectedBodyRef.current.mass = 0;
+          selectedBodyRef.current.collisionResponse = false;
+          selectedBodyRef.current.updateMassProperties();
+
+          // ✅ Fix: Create an anchor point before adding it to the world
+          const anchorBody = new CANNON.Body({ mass: 0 });
+          worldRef.current.addBody(anchorBody); // Add first, then use
+
+          // 🔗 Create constraint
+          dragConstraintRef.current = new CANNON.PointToPointConstraint(
+            selectedBodyRef.current,
+            new CANNON.Vec3(0, 0, 0), // Attach at center
+            anchorBody,
+            new CANNON.Vec3(0, 0, 0) // Attach at anchor center
+          );
+
+          worldRef.current.addConstraint(dragConstraintRef.current);
           controls.enabled = false;
         }
       }
@@ -210,10 +316,13 @@ function Dashboard() {
     };
 
     const onMouseUp = () => {
+      if (dragConstraintRef.current && worldRef.current) {
+        worldRef.current.removeConstraint(dragConstraintRef.current);
+        dragConstraintRef.current = null;
+      }
+
       isDraggingRef.current = false;
       selectedBodyRef.current = null;
-
-      // Re-enable OrbitControls when done dragging
       controls.enabled = true;
     };
 
